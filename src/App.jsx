@@ -1,220 +1,168 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { supabase, isConfigured } from './supabase.js'
+import Login from './views/Login.jsx'
+import Apartments from './views/Apartments.jsx'
+import CleaningDates from './views/CleaningDates.jsx'
+import CalendarView from './views/Calendar.jsx'
+import Stock from './views/Stock.jsx'
+import Notifications from './views/Notifications.jsx'
 
-const STORAGE_KEY = 'menage-app:tasks'
-const ROOMS = ['Cuisine', 'Salon', 'Salle de bain', 'Chambre', 'WC', 'Entrée', 'Autre']
-const FREQUENCIES = [
-  { value: 1, label: 'Tous les jours' },
-  { value: 2, label: 'Tous les 2 jours' },
-  { value: 7, label: 'Chaque semaine' },
-  { value: 14, label: 'Toutes les 2 semaines' },
-  { value: 30, label: 'Chaque mois' },
+const ADMIN_TABS = [
+  { id: 'dates', label: 'Dates' },
+  { id: 'calendar', label: 'Calendrier' },
+  { id: 'apartments', label: 'Logements' },
+  { id: 'stock', label: 'Stocks' },
+  { id: 'notifications', label: 'Notifications' },
 ]
 
-const loadTasks = () => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : defaultTasks()
-  } catch {
-    return defaultTasks()
-  }
-}
-
-const defaultTasks = () => [
-  { id: 't1', title: 'Passer l\'aspirateur', room: 'Salon', frequency: 7, lastDone: null },
-  { id: 't2', title: 'Nettoyer le plan de travail', room: 'Cuisine', frequency: 1, lastDone: null },
-  { id: 't3', title: 'Laver les sanitaires', room: 'Salle de bain', frequency: 7, lastDone: null },
-  { id: 't4', title: 'Changer les draps', room: 'Chambre', frequency: 14, lastDone: null },
+const CLEANER_TABS = [
+  { id: 'dates', label: 'Dates à valider' },
+  { id: 'calendar', label: 'Calendrier' },
+  { id: 'stock', label: 'Stocks' },
+  { id: 'notifications', label: 'Notifications' },
 ]
-
-const daysSince = (iso) => {
-  if (!iso) return Infinity
-  const diffMs = Date.now() - new Date(iso).getTime()
-  return Math.floor(diffMs / (1000 * 60 * 60 * 24))
-}
-
-const statusFor = (task) => {
-  const d = daysSince(task.lastDone)
-  if (d === Infinity) return { label: 'Jamais fait', tone: 'late' }
-  if (d >= task.frequency) return { label: `En retard de ${d - task.frequency} j`, tone: 'late' }
-  if (d >= task.frequency - 1) return { label: 'À faire aujourd\'hui', tone: 'due' }
-  return { label: `Dans ${task.frequency - d} j`, tone: 'ok' }
-}
 
 export default function App() {
-  const [tasks, setTasks] = useState(loadTasks)
-  const [title, setTitle] = useState('')
-  const [room, setRoom] = useState(ROOMS[0])
-  const [frequency, setFrequency] = useState(7)
-  const [filter, setFilter] = useState('all')
+  const [session, setSession] = useState(null)
+  const [profile, setProfile] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [tab, setTab] = useState('dates')
+  const [unread, setUnread] = useState(0)
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks))
-  }, [tasks])
-
-  const addTask = (e) => {
-    e.preventDefault()
-    const trimmed = title.trim()
-    if (!trimmed) return
-    const newTask = {
-      id: crypto.randomUUID(),
-      title: trimmed,
-      room,
-      frequency: Number(frequency),
-      lastDone: null,
+    if (!isConfigured) {
+      setLoading(false)
+      return
     }
-    setTasks((prev) => [newTask, ...prev])
-    setTitle('')
-  }
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+      setLoading(false)
+    })
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
+      setSession(s)
+    })
+    return () => sub.subscription.unsubscribe()
+  }, [])
 
-  const markDone = (id) => {
-    setTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, lastDone: new Date().toISOString() } : t))
+  useEffect(() => {
+    if (!session) {
+      setProfile(null)
+      return
+    }
+    supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', session.user.id)
+      .maybeSingle()
+      .then(({ data }) => setProfile(data))
+  }, [session])
+
+  useEffect(() => {
+    if (!profile) return
+    const load = async () => {
+      const { count } = await supabase
+        .from('notifications')
+        .select('*', { count: 'exact', head: true })
+        .eq('target_role', profile.role)
+        .eq('read', false)
+      setUnread(count || 0)
+    }
+    load()
+    const channel = supabase
+      .channel('notif-badge')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, load)
+      .subscribe()
+    return () => supabase.removeChannel(channel)
+  }, [profile])
+
+  if (!isConfigured) {
+    return (
+      <div className="app">
+        <div className="setup-warning">
+          <h1>⚙️ Configuration requise</h1>
+          <p>
+            L'application n'est pas encore connectée à Supabase. Crée un fichier <code>.env</code> à la racine
+            du projet avec :
+          </p>
+          <pre>VITE_SUPABASE_URL=https://xxx.supabase.co
+VITE_SUPABASE_ANON_KEY=ta-clé-anonyme</pre>
+          <p>
+            Voir le fichier <code>supabase/schema.sql</code> pour créer les tables dans ton projet Supabase.
+          </p>
+        </div>
+      </div>
     )
   }
 
-  const resetTask = (id) => {
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, lastDone: null } : t)))
+  if (loading) return <div className="app center">Chargement...</div>
+  if (!session) return <Login />
+  if (!profile) {
+    return (
+      <div className="app center">
+        <div className="card">
+          <h2>Profil introuvable</h2>
+          <p>Votre compte n'a pas encore de rôle attribué. Déconnectez-vous et recréez un compte.</p>
+          <button className="btn btn-danger" onClick={() => supabase.auth.signOut()}>
+            Se déconnecter
+          </button>
+        </div>
+      </div>
+    )
   }
 
-  const removeTask = (id) => {
-    setTasks((prev) => prev.filter((t) => t.id !== id))
+  const tabs = profile.role === 'admin' ? ADMIN_TABS : CLEANER_TABS
+
+  const renderTab = () => {
+    switch (tab) {
+      case 'apartments':
+        return <Apartments />
+      case 'dates':
+        return <CleaningDates role={profile.role} />
+      case 'calendar':
+        return <CalendarView />
+      case 'stock':
+        return <Stock role={profile.role} />
+      case 'notifications':
+        return <Notifications role={profile.role} onChange={() => setUnread(0)} />
+      default:
+        return null
+    }
   }
-
-  const visibleTasks = useMemo(() => {
-    const withStatus = tasks.map((t) => ({ ...t, status: statusFor(t) }))
-    const sorted = [...withStatus].sort((a, b) => {
-      const order = { late: 0, due: 1, ok: 2 }
-      return order[a.status.tone] - order[b.status.tone]
-    })
-    if (filter === 'all') return sorted
-    if (filter === 'todo') return sorted.filter((t) => t.status.tone !== 'ok')
-    return sorted.filter((t) => t.room === filter)
-  }, [tasks, filter])
-
-  const stats = useMemo(() => {
-    const total = tasks.length
-    const late = tasks.filter((t) => statusFor(t).tone === 'late').length
-    const due = tasks.filter((t) => statusFor(t).tone === 'due').length
-    return { total, late, due }
-  }, [tasks])
 
   return (
     <div className="app">
-      <header className="header">
-        <h1>🧹 MénageApp</h1>
-        <p className="subtitle">Suivez vos tâches ménagères sans y penser</p>
+      <header className="topbar">
+        <div className="brand">
+          <span className="brand-icon">🧹</span>
+          <span className="brand-name">MénageApp</span>
+          <span className={`role-pill role-${profile.role}`}>
+            {profile.role === 'admin' ? 'Admin' : 'Ménage'}
+          </span>
+        </div>
+        <div className="topbar-right">
+          <span className="user-email">{session.user.email}</span>
+          <button className="btn btn-ghost" onClick={() => supabase.auth.signOut()}>
+            Déconnexion
+          </button>
+        </div>
       </header>
 
-      <section className="stats">
-        <div className="stat">
-          <div className="stat-value">{stats.total}</div>
-          <div className="stat-label">Tâches</div>
-        </div>
-        <div className="stat stat-due">
-          <div className="stat-value">{stats.due}</div>
-          <div className="stat-label">À faire</div>
-        </div>
-        <div className="stat stat-late">
-          <div className="stat-value">{stats.late}</div>
-          <div className="stat-label">En retard</div>
-        </div>
-      </section>
-
-      <form className="form" onSubmit={addTask}>
-        <input
-          className="input"
-          type="text"
-          placeholder="Nouvelle tâche (ex. Laver les vitres)"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-        />
-        <select className="select" value={room} onChange={(e) => setRoom(e.target.value)}>
-          {ROOMS.map((r) => (
-            <option key={r} value={r}>
-              {r}
-            </option>
-          ))}
-        </select>
-        <select
-          className="select"
-          value={frequency}
-          onChange={(e) => setFrequency(e.target.value)}
-        >
-          {FREQUENCIES.map((f) => (
-            <option key={f.value} value={f.value}>
-              {f.label}
-            </option>
-          ))}
-        </select>
-        <button className="btn btn-primary" type="submit">
-          Ajouter
-        </button>
-      </form>
-
-      <div className="filters">
-        <button
-          className={`chip ${filter === 'all' ? 'chip-active' : ''}`}
-          onClick={() => setFilter('all')}
-        >
-          Toutes
-        </button>
-        <button
-          className={`chip ${filter === 'todo' ? 'chip-active' : ''}`}
-          onClick={() => setFilter('todo')}
-        >
-          À faire
-        </button>
-        {ROOMS.map((r) => (
+      <nav className="tabs">
+        {tabs.map((t) => (
           <button
-            key={r}
-            className={`chip ${filter === r ? 'chip-active' : ''}`}
-            onClick={() => setFilter(r)}
+            key={t.id}
+            className={`tab ${tab === t.id ? 'tab-active' : ''}`}
+            onClick={() => setTab(t.id)}
           >
-            {r}
+            {t.label}
+            {t.id === 'notifications' && unread > 0 && (
+              <span className="badge-count">{unread}</span>
+            )}
           </button>
         ))}
-      </div>
+      </nav>
 
-      <ul className="list">
-        {visibleTasks.length === 0 && (
-          <li className="empty">Aucune tâche. Ajoutez-en une ci-dessus.</li>
-        )}
-        {visibleTasks.map((t) => (
-          <li key={t.id} className={`task task-${t.status.tone}`}>
-            <div className="task-main">
-              <div className="task-title">{t.title}</div>
-              <div className="task-meta">
-                <span className="badge">{t.room}</span>
-                <span className="badge">
-                  {FREQUENCIES.find((f) => f.value === t.frequency)?.label ??
-                    `Tous les ${t.frequency} j`}
-                </span>
-                <span className={`badge badge-${t.status.tone}`}>{t.status.label}</span>
-                {t.lastDone && (
-                  <span className="muted">
-                    Fait le {new Date(t.lastDone).toLocaleDateString('fr-FR')}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="task-actions">
-              <button className="btn btn-done" onClick={() => markDone(t.id)}>
-                ✓ Fait
-              </button>
-              {t.lastDone && (
-                <button className="btn btn-ghost" onClick={() => resetTask(t.id)}>
-                  ↺
-                </button>
-              )}
-              <button className="btn btn-danger" onClick={() => removeTask(t.id)}>
-                ✕
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
-
-      <footer className="footer">Données sauvegardées localement dans votre navigateur.</footer>
+      <main className="content">{renderTab()}</main>
     </div>
   )
 }
