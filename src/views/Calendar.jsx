@@ -15,11 +15,11 @@ import {
 import { fr } from 'date-fns/locale'
 import { supabase } from '../supabase.js'
 
-const STATUS_COLORS = {
-  pending: 'warn',
-  accepted: 'success',
-  refused: 'danger',
-  done: 'info',
+const STATUS_META = {
+  pending: { label: 'En attente', color: 'warn' },
+  accepted: { label: 'Acceptée', color: 'success' },
+  refused: { label: 'Refusée', color: 'danger' },
+  done: { label: 'Terminée', color: 'info' },
 }
 
 export default function CalendarView() {
@@ -82,40 +82,49 @@ export default function CalendarView() {
         </div>
       </div>
 
+      <div className="legend">
+        <span className="legend-item"><span className="legend-swatch legend-warn" /> En attente</span>
+        <span className="legend-item"><span className="legend-swatch legend-success" /> Acceptée</span>
+        <span className="legend-item"><span className="legend-swatch legend-info" /> Terminée</span>
+        <span className="legend-item"><span className="legend-swatch legend-danger" /> Refusée</span>
+      </div>
+
       <div className="calendar-grid">
         {weekdays.map((w) => (
-          <div key={w} className="calendar-weekday">
-            {w}
-          </div>
+          <div key={w} className="calendar-weekday">{w}</div>
         ))}
         {days.map((day) => {
           const key = format(day, 'yyyy-MM-dd')
           const dayDates = datesByDay[key] || []
           const isToday = isSameDay(day, new Date())
           const inMonth = isSameMonth(day, cursor)
+
+          const priority = { pending: 0, accepted: 1, done: 2, refused: 3 }
+          const dominantStatus = dayDates.length > 0
+            ? [...dayDates].sort((a, b) => priority[a.status] - priority[b.status])[0].status
+            : null
+
           return (
             <div
               key={key}
-              className={`calendar-day ${inMonth ? '' : 'calendar-day-out'} ${isToday ? 'calendar-day-today' : ''}`}
+              className={`cal-day ${inMonth ? '' : 'cal-day-out'} ${isToday ? 'cal-day-today' : ''} ${dominantStatus ? `cal-day-has cal-day-${STATUS_META[dominantStatus].color}` : ''}`}
               onClick={() => dayDates.length > 0 && setSelected({ day, items: dayDates })}
             >
-              <div className="calendar-day-num">{format(day, 'd')}</div>
-              <div className="calendar-day-dots">
-                {dayDates.slice(0, 3).map((d) => (
-                  <span key={d.id} className={`dot dot-${STATUS_COLORS[d.status]}`} title={d.apartment?.name} />
+              <div className="cal-day-num">{format(day, 'd')}</div>
+              <div className="cal-day-events">
+                {dayDates.slice(0, 2).map((d) => (
+                  <div key={d.id} className={`cal-event cal-event-${STATUS_META[d.status].color}`}>
+                    <span className="cal-event-dot" />
+                    <span className="cal-event-name">{d.apartment?.name || '?'}</span>
+                  </div>
                 ))}
-                {dayDates.length > 3 && <span className="dot-more">+{dayDates.length - 3}</span>}
+                {dayDates.length > 2 && (
+                  <div className="cal-more">+{dayDates.length - 2} autre{dayDates.length - 2 > 1 ? 's' : ''}</div>
+                )}
               </div>
             </div>
           )
         })}
-      </div>
-
-      <div className="legend">
-        <span className="legend-item"><span className="dot dot-warn" /> En attente</span>
-        <span className="legend-item"><span className="dot dot-success" /> Acceptée</span>
-        <span className="legend-item"><span className="dot dot-danger" /> Refusée</span>
-        <span className="legend-item"><span className="dot dot-info" /> Terminée</span>
       </div>
 
       {selected && (
@@ -134,10 +143,13 @@ export default function CalendarView() {
                     <div className="date-title">{d.apartment?.name || 'Logement supprimé'}</div>
                     <div className="date-meta">💶 {Number(d.price).toFixed(2)} €</div>
                     <div className="date-meta">
-                      <span className={`badge badge-${STATUS_COLORS[d.status]}`}>
-                        {d.status === 'pending' ? 'En attente' : d.status === 'accepted' ? 'Acceptée' : d.status === 'refused' ? 'Refusée' : 'Terminée'}
+                      <span className={`badge badge-${STATUS_META[d.status].color}`}>
+                        {STATUS_META[d.status].label}
                       </span>
                     </div>
+                    {d.admin_note && (
+                      <div className="date-meta small"><strong>Note :</strong> {d.admin_note}</div>
+                    )}
                   </div>
                 </li>
               ))}
