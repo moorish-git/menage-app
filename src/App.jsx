@@ -6,20 +6,23 @@ import CleaningDates from './views/CleaningDates.jsx'
 import CalendarView from './views/Calendar.jsx'
 import Stock from './views/Stock.jsx'
 import Notifications from './views/Notifications.jsx'
+import History from './views/History.jsx'
 
 const ADMIN_TABS = [
-  { id: 'dates', label: 'Dates' },
-  { id: 'calendar', label: 'Calendrier' },
-  { id: 'apartments', label: 'Logements' },
-  { id: 'stock', label: 'Stocks' },
-  { id: 'notifications', label: 'Notifications' },
+  { id: 'dates', label: 'Dates', icon: '📋' },
+  { id: 'calendar', label: 'Calendrier', icon: '📅' },
+  { id: 'apartments', label: 'Logements', icon: '🏠' },
+  { id: 'stock', label: 'Stocks', icon: '📦' },
+  { id: 'history', label: 'Historique', icon: '📊' },
+  { id: 'notifications', label: 'Notifs', icon: '🔔' },
 ]
 
 const CLEANER_TABS = [
-  { id: 'dates', label: 'Dates à valider' },
-  { id: 'calendar', label: 'Calendrier' },
-  { id: 'stock', label: 'Stocks' },
-  { id: 'notifications', label: 'Notifications' },
+  { id: 'dates', label: 'À valider', icon: '📋' },
+  { id: 'calendar', label: 'Calendrier', icon: '📅' },
+  { id: 'stock', label: 'Stocks', icon: '📦' },
+  { id: 'history', label: 'Historique', icon: '📊' },
+  { id: 'notifications', label: 'Notifs', icon: '🔔' },
 ]
 
 export default function App() {
@@ -122,6 +125,8 @@ VITE_SUPABASE_ANON_KEY=ta-clé-anonyme</pre>
         return <CalendarView />
       case 'stock':
         return <Stock role={profile.role} />
+      case 'history':
+        return <History />
       case 'notifications':
         return <Notifications role={profile.role} onChange={() => setUnread(0)} />
       default:
@@ -154,7 +159,8 @@ VITE_SUPABASE_ANON_KEY=ta-clé-anonyme</pre>
             className={`tab ${tab === t.id ? 'tab-active' : ''}`}
             onClick={() => setTab(t.id)}
           >
-            {t.label}
+            <span className="tab-icon">{t.icon}</span>
+            <span className="tab-label">{t.label}</span>
             {t.id === 'notifications' && unread > 0 && (
               <span className="badge-count">{unread}</span>
             )}

@@ -123,6 +123,28 @@ export default function CleaningDates({ role }) {
     return dates.filter((d) => d.status === filter)
   }, [dates, filter])
 
+  const cagnotte = useMemo(() => {
+    const acceptedSum = dates
+      .filter((d) => d.status === 'accepted')
+      .reduce((sum, d) => sum + Number(d.price || 0), 0)
+    const doneSum = dates
+      .filter((d) => d.status === 'done')
+      .reduce((sum, d) => sum + Number(d.price || 0), 0)
+    const pendingSum = dates
+      .filter((d) => d.status === 'pending')
+      .reduce((sum, d) => sum + Number(d.price || 0), 0)
+    const acceptedCount = dates.filter((d) => d.status === 'accepted').length
+    const doneCount = dates.filter((d) => d.status === 'done').length
+    return {
+      acceptedSum,
+      doneSum,
+      pendingSum,
+      acceptedCount,
+      doneCount,
+      total: acceptedSum + doneSum,
+    }
+  }, [dates])
+
   if (loading) return <div className="muted">Chargement...</div>
 
   return (
@@ -139,6 +161,31 @@ export default function CleaningDates({ role }) {
           </button>
         )}
       </div>
+
+      {dates.length > 0 && (
+        <div className="cagnotte-card">
+          <div className="cagnotte-icon">💰</div>
+          <div className="cagnotte-body">
+            <div className="cagnotte-label">
+              {role === 'cleaner' ? 'Ma cagnotte' : 'Cagnotte totale'}
+            </div>
+            <div className="cagnotte-amount">{cagnotte.total.toFixed(2)} €</div>
+            <div className="cagnotte-breakdown">
+              <span className="cagnotte-chip cagnotte-chip-success">
+                ✓ {cagnotte.doneSum.toFixed(2)} € terminés ({cagnotte.doneCount})
+              </span>
+              <span className="cagnotte-chip cagnotte-chip-info">
+                ⏳ {cagnotte.acceptedSum.toFixed(2)} € en cours ({cagnotte.acceptedCount})
+              </span>
+              {cagnotte.pendingSum > 0 && (
+                <span className="cagnotte-chip cagnotte-chip-warn">
+                  📅 {cagnotte.pendingSum.toFixed(2)} € à valider
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {role === 'admin' && apartments.length === 0 && (
         <div className="empty-state">Créez d'abord un logement dans l'onglet "Logements".</div>
